@@ -33,6 +33,8 @@ class BaseRoBot(object):
 
     def __init__(self, token=None, logger=None, enable_session=True,
                  session_storage=None):
+        #easton added
+        self.app = None
         self.config = Config(_DEFAULT_CONFIG)
         self._handlers = dict((k, []) for k in self.message_types)
         self._handlers['all'] = []
@@ -195,6 +197,8 @@ class BaseRoBot(object):
     def get_reply(self, message):
         """
         Return the raw xml reply for the given message.
+        the handler function's 1st param should be the message, 2nd param should be the session
+        others be as specification
         """
         session_storage = self.config["SESSION_STORAGE"]
 
@@ -253,44 +257,51 @@ class WeRoBot(BaseRoBot):
     def wsgi(self):
         if not self._handlers:
             raise
-        app = Bottle()
+        if self.app == None:
+            app = Bottle()
 
-        @app.get('<t:path>')
-        def echo(t):
-            if not self.check_signature(
-                request.query.timestamp,
-                request.query.nonce,
-                request.query.signature
-            ):
-                return abort(403)
-            return request.query.echostr
+            @app.get('<t:path>')
+            def echo(t):
+                if not self.check_signature(
+                    request.query.timestamp,
+                    request.query.nonce,
+                    request.query.signature
+                ):
+                    return abort(403)
+                return request.query.echostr
 
-        @app.post('<t:path>')
-        def handle(t):
-            if not self.check_signature(
-                request.query.timestamp,
-                request.query.nonce,
-                request.query.signature
-            ):
-                return abort(403)
+            #easton modified, to add support to other route rule
+            #please specify your wechat server url to http://your-domain/weixin
+            #@app.post('<t:path>')
+            @app.post('/weixin')
+            #def handle(t):
+            def handle():
+                if not self.check_signature(
+                    request.query.timestamp,
+                    request.query.nonce,
+                    request.query.signature
+                ):
+                    return abort(403)
 
-            body = request.body.read()
-            message = parse_user_msg(body)
-            logging.info("Receive message %s" % message)
-            reply = self.get_reply(message)
-            if not reply:
-                self.logger.warning("No handler responded message %s"
-                                    % message)
-                return ''
-            response.content_type = 'application/xml'
-            return create_reply(reply, message=message)
+                body = request.body.read()
+                message = parse_user_msg(body)
+                logging.info("Receive message %s" % message)
+                reply = self.get_reply(message)
+                if not reply:
+                    self.logger.warning("No handler responded message %s"
+                                        % message)
+                    return ''
+                response.content_type = 'application/xml'
+                return create_reply(reply, message=message)
 
-        @app.error(403)
-        def error403(error):
-            return template(self.ERROR_PAGE_TEMPLATE,
-                            e=error, request=request)
+            @app.error(403)
+            def error403(error):
+                return template(self.ERROR_PAGE_TEMPLATE,
+                                e=error, request=request)
 
-        return app
+            self.app = app
+
+        return self.app
 
     def run(self, server=None, host=None,
             port=None, enable_pretty_logging=True):
